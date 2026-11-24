@@ -1,0 +1,25 @@
+name: Nova CD Workflow
+run-name: ${{ github.workflow }}  - ${{ github.actor }}  # note: https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#github-context
+on:
+  push:
+    branches:
+      - main
+      - v4/w5-**  # note: this is for demo purposes
+
+jobs:
+  Saluting:
+    name: 👋 Saluting
+    runs-on: ubuntu-22.04
+    steps:
+      - run: echo "👋 Hello world!"
+
+  ci-reuse:
+    uses: ./.github/workflows/ci.yaml
+
+  Deployment:
+    name: 🚀 Mock Deployment
+    runs-on: ubuntu-22.04
+    needs: [Saluting, ci-reuse]
+    environment: production
+    steps:
+      - run: echo "🎸 Build image, push image, deploy chart to k8s!"

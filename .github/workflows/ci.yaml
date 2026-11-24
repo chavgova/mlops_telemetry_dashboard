@@ -1,0 +1,62 @@
+# note: This is the last week's material, CI/CD, is without any assignments. In the course project, it will also not be
+# note: expected to be included.
+# note: We will use GitHub (GH) Actions: the CI/CD solution for and from GitHub. As (1) we are hosting our repo on GitHub,
+# note: and (2) you will not have to use it in any of your work - so you won't have to pay for it - it is a good
+# note: choice to introduce CI/CD with GH Actions.
+#
+# note: Always good to read the documentation! https://docs.github.com/en/actions
+
+name: Nova CI Workflow
+run-name: ${{ github.workflow }}  - ${{ github.actor }}  # note: https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#github-context
+on:
+  workflow_call:
+
+  pull_request:       # note: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request
+    branches:
+      - v4/w5-telemetry-cicd
+      - v4/w5-**      # note: https://github.com/kemalty/uva-mlprod-code/pull/1
+  push:               # note: https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#push
+    branches:
+      - v4/w5-telemetry-cicd
+      - v4/w5-**
+
+jobs:
+  Saluting:
+    name: 👋 Saluting
+    runs-on: ubuntu-22.04     # note: https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job#standard-github-hosted-runners-for--private-repositories
+    steps:
+      - run: echo "👋 Hello world!"
+      - run: echo "4️⃣2️⃣"
+
+  CodeChecks:
+    name: 📋 Code Checks
+    runs-on: ubuntu-22.04
+    # note: runs-on starts the "Actions" runner with vanilla Ubuntu image. As it gets it from the Docker registry
+    # note: so there is nothing in it at this time
+
+    steps:
+
+      - uses: actions/checkout@v4   # note: https://github.com/actions/checkout
+
+      - name: 🐳 Building Docker Image
+        run: make build-light       # note: Another good reason of using Make: I do not have to duplicate my commands. I can reuse it in my CI, and in my local.
+
+      - name: 🐶 Checking Formatting with Ruff
+        run: docker run nova make format-check    # note: Put Docker in the front. The code will run in the image, so why not run everything there? We do not want to configure the runner.
+
+      - name: 🧪 Running Tests
+        run: docker run nova make test
+
+  SecurityChecks:
+    name: 🚓 Security Checks
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4   # note: https://github.com/actions/checkout
+
+      - name: 🔐 Secret Scanning
+        uses: trufflesecurity/trufflehog@main
+
+
+
+
