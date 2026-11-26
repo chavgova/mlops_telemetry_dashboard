@@ -88,3 +88,20 @@ services:
       test: wget http://localhost:8080/api/v2/monitor/health -o /dev/null || exit 1  # note: wget downloads the file. I do not need it. So we move it to /dev/null
       retries: 3
       interval: 5s
+
+  grafana:
+    image: grafana/grafana:12.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      GF_USERS_DEFAULT_THEME: dark
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./telemetry/grafana/datasources.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+
+
+volumes:
+  grafana_data:
