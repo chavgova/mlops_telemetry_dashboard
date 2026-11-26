@@ -70,10 +70,10 @@ def main(preprocess: bool, feat_eng: bool, training: bool):  # pragma: no cover
 
         telemetry_data = {
             "is_large_transaction": {
-                False: sum(data["is_large_transaction"] == False),
+                False: sum(data["is_large_transaction"].eq(False)),
                 True: sum(data["is_large_transaction"]),
             },
-            "is_fraud": {False: sum(data["fraud"] == False), True: sum(data["fraud"])},
+            "is_fraud": {False: sum(data["fraud"].eq(False)), True: sum(data["fraud"])},
         }
         with open(PathsConfig.telemetry_training_data_path, "w") as file:
             json.dump(telemetry_data, file)

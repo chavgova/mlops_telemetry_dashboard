@@ -12,7 +12,10 @@ from configs.configs import PathsConfig, TelemetryConfig
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument( "--mode", choices=("normal", "drift", "small", "stale"), default="normal" ) args = parser.parse_args()
+    parser.add_argument(
+        "--mode", choices=("normal", "drift", "small", "stale"), default="normal"
+    )
+    args = parser.parse_args()
 
     with open(PathsConfig.telemetry_training_data_path) as stream:
         reference = json.load(stream)["is_large_transaction"]
@@ -22,13 +25,15 @@ def main():
     if args.mode == "small":
         size = max(1, size // 2)
 
-    # genetaring randomized mock flags 
+    # genetaring randomized mock flags
     rate = 0.5 if args.mode == "drift" else reference["true"] / sum(reference.values())
     positives = round(size * rate)
     flags = [True] * positives + [False] * (size - positives)
     random.Random(88).shuffle(flags)
-    
-    now = datetime.now().timestamp() - ( 2 * TelemetryConfig.live_window_seconds if args.mode == "stale" else 0 )
+
+    now = datetime.now().timestamp() - (
+        2 * TelemetryConfig.live_window_seconds if args.mode == "stale" else 0
+    )
     predictions = pd.DataFrame(
         {
             "timestamp": [int((now - i * 0.1) * 1000) for i in range(size)],
