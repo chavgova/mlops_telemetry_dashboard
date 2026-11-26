@@ -7,7 +7,7 @@ import pytest
 
 from src import main_drift_calculation as batch
 
-NOW = 1_700_000_000 # used for tests time
+NOW = 1_700_000_000  # used for tests time
 
 
 @pytest.fixture
@@ -16,10 +16,16 @@ def job(tmp_path, monkeypatch):
     live = tmp_path / "live.json"
     training.write_text(json.dumps({"is_large_transaction": {"true": 50, "false": 50}}))
     monkeypatch.setattr(
-        batch, "PathsConfig",
-        SimpleNamespace( telemetry_training_data_path=str(training), telemetry_live_data_path=str(live), ), )
+        batch,
+        "PathsConfig",
+        SimpleNamespace(
+            telemetry_training_data_path=str(training),
+            telemetry_live_data_path=str(live),
+        ),
+    )
     monkeypatch.setattr(
-        batch, "TelemetryConfig",
+        batch,
+        "TelemetryConfig",
         SimpleNamespace(
             num_instances_for_live_dist=4,
             live_window_seconds=300,
@@ -83,15 +89,20 @@ def test_latest_window_and_exported_metrics(job):
     )
     # asserting that the metric values are what is expected
     assert registry.get_sample_value("nova_monitoring_samples") == 4
-    assert registry.get_sample_value( "nova_psi_s", {"target": "is_large_transaction"} ) == pytest.approx(0)
+    assert registry.get_sample_value(
+        "nova_psi_s", {"target": "is_large_transaction"}
+    ) == pytest.approx(0)
     assert registry.get_sample_value("nova_live_data_timestamp_seconds") == NOW
-    assert registry.get_sample_value("nova_monitoring_last_success_timestamp_seconds") == NOW 
+    assert (
+        registry.get_sample_value("nova_monitoring_last_success_timestamp_seconds")
+        == NOW
+    )
     gateway.assert_called_once()
     assert gateway.call_args.args[0] == "http://unused:9091"
     assert gateway.call_args.kwargs["job"] == "telemetryBatch"
 
 
-@pytest.mark.parametrize( # small data sample for tests
+@pytest.mark.parametrize(  # small data sample for tests
     "rows,count,timestamp",
     [
         ([row(0, True)], 1, NOW),
@@ -103,17 +114,28 @@ def test_insufficient_or_stale_data(job, rows, count, timestamp):
     registry = job[0](rows)
     assert registry.get_sample_value("nova_monitoring_samples") == count
     assert registry.get_sample_value("nova_live_data_timestamp_seconds") == timestamp
-    assert ( registry.get_sample_value("nova_psi_s", {"target": "is_large_transaction"}) is None )
+    assert (
+        registry.get_sample_value("nova_psi_s", {"target": "is_large_transaction"})
+        is None
+    )
+
 
 def test_next_snapshot_removes_old_psi(job):
     run, bla, blabla = job
     first = run([row(0, True), row(1, False), row(2, True), row(3, False)])
-    assert first.get_sample_value( "nova_psi_s", {"target": "is_large_transaction"} ) == pytest.approx(0)
+    assert first.get_sample_value(
+        "nova_psi_s", {"target": "is_large_transaction"}
+    ) == pytest.approx(0)
     second = run([row(0, True)])
-    assert ( second.get_sample_value("nova_psi_s", {"target": "is_large_transaction"}) is None )
+    assert (
+        second.get_sample_value("nova_psi_s", {"target": "is_large_transaction"})
+        is None
+    )
 
 
-@pytest.mark.parametrize( "rows", [[row(-1, True)], [row(0, "false")], [{"timestamp": NOW * 1000}]] )
+@pytest.mark.parametrize(
+    "rows", [[row(-1, True)], [row(0, "false")], [{"timestamp": NOW * 1000}]]
+)
 def test_bad_data_is_not_pushed(job, rows):
     run, gateway, blabla = job
     with pytest.raises(ValueError):
@@ -125,7 +147,7 @@ def test_push_failure_propagates(job):
     # making sure that if it fails, the problem is propagated and not being silenced
     run, gateway, blabla = job
     gateway.side_effect = ConnectionError("Unavailable")
-    
+
     with pytest.raises(ConnectionError):
         run([row(0, True)])
 
@@ -134,8 +156,8 @@ def test_invalid_json_is_not_pushed(job):
     # this test helped me catch an issue
     blabla, gateway, live = job
     live.write_text("{bad")
-    
+
     with pytest.raises(json.JSONDecodeError):
         batch.main(now=NOW)
-        
+
     gateway.assert_not_called()
