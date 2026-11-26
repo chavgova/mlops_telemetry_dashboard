@@ -1,0 +1,110 @@
+rule_files:
+  - alerts.yml
+evaluation_interval: 15s
+
+tests:
+  - name: HTTP errors need enough traffic and must persist
+    interval: 15s
+    input_series:
+      - series: 'nova_http_request_total{method="POST",status="500"}'
+        values: '0+1x30'
+      - series: 'nova_http_request_total{method="POST",status="200"}'
+        values: '0+9x30'
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: NovaHttpErrors
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: NovaHttpErrors
+        exp_alerts:
+          - exp_labels: {severity: critical}
+            exp_annotations:
+              summary: "HTTP server error rate exceeds 5%"
+
+  - name: Drift fires with enough data and clears when data is insufficient
+    interval: 15s
+    input_series:
+      - series: 'nova_psi_s{job="telemetryBatch",target="is_large_transaction"}'
+        values: '0.3+0x30'
+      - series: 'nova_monitoring_samples{job="telemetryBatch"}'
+        values: '200+0x8 10+0x22'
+      - series: 'nova_monitoring_last_success_timestamp_seconds{job="telemetryBatch"}'
+        values: '0+15x30'
+      - series: 'nova_live_data_timestamp_seconds{job="telemetryBatch"}'
+        values: '0+15x30'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: NovaDistributionDrift
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: telemetryBatch
+              target: is_large_transaction
+            exp_annotations:
+              summary: "Large transaction feature distribution changed"
+      - eval_time: 4m
+        alertname: NovaDistributionDrift
+        exp_alerts: []
+
+  - name: Old snapshots raise a job alert and suppress drift
+    interval: 15s
+    input_series:
+      - series: 'nova_psi_s{job="telemetryBatch",target="is_large_transaction"}'
+        values: '0.3+0x30'
+      - series: 'nova_monitoring_samples{job="telemetryBatch"}'
+        values: '200+0x30'
+      - series: 'nova_monitoring_last_success_timestamp_seconds{job="telemetryBatch"}'
+        values: '0+0x30'
+      - series: 'nova_live_data_timestamp_seconds{job="telemetryBatch"}'
+        values: '0+15x30'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: NovaDistributionDrift
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: NovaMonitoringStopped
+        exp_alerts:
+          - exp_labels: {severity: warning, job: telemetryBatch}
+            exp_annotations:
+              summary: "Monitoring has not published a recent successful snapshot"
+
+  - name: Fresh calculations do not hide old source data
+    interval: 15s
+    input_series:
+      - series: 'nova_psi_s{job="telemetryBatch",target="is_large_transaction"}'
+        values: '0.3+0x40'
+      - series: 'nova_monitoring_samples{job="telemetryBatch"}'
+        values: '200+0x40'
+      - series: 'nova_monitoring_last_success_timestamp_seconds{job="telemetryBatch"}'
+        values: '0+15x40'
+      - series: 'nova_live_data_timestamp_seconds{job="telemetryBatch"}'
+        values: '0+0x40'
+    alert_rule_test:
+      - eval_time: 7m
+        alertname: NovaDistributionDrift
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: NovaLiveDataStale
+        exp_alerts:
+          - exp_labels: {severity: warning, job: telemetryBatch}
+            exp_annotations:
+              summary: "Monitoring is running but input data is old"
+
+  - name: API scrape failure persists before firing
+    interval: 15s
+    input_series:
+      - series: 'up{job="nova",instance="app:5001"}'
+        values: '0+0x10'
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: NovaApiDown
+        exp_alerts: []
+      - eval_time: 2m
+        alertname: NovaApiDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: nova
+              instance: app:5001
+            exp_annotations:
+              summary: "API is UNAVAILABLE!!!"

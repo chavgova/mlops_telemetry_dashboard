@@ -3,6 +3,8 @@ services:
   training:
     image: nova:latest
     command: python src/main_training.py --preprocess --feat-eng --training
+    volumes:
+      - ../data/telemetry:/nova/data/telemetry
     depends_on:
       mlflow:
         condition: service_healthy
@@ -64,7 +66,12 @@ services:
     image: nova:latest
     command: ["/bin/sh", "-c", "while true; do sleep 10; python src/main_drift_calculation.py ; done"]
     depends_on:
-      - prometheus
+      prometheus:
+        condition: service_healthy
+      training:
+        condition: service_completed_successfully
+    volumes:
+      - ../data/telemetry:/nova/data/telemetry:ro
 
   airflow:
     image: apache/airflow:3.1.0-python3.10

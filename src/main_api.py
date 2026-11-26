@@ -1,5 +1,6 @@
 from functools import cache
 import logging
+import math
 
 import mlflow
 from http import HTTPStatus
@@ -64,6 +65,16 @@ data_quality_counter = Counter(
     "Count of data quality issues",
     labelnames=["quality_rule"],
 )
+for pred in ("true", "false"):
+    pred_counter.labels(pred=pred)
+for rule in (
+    "invalid_payload",
+    "missing_fields",
+    "invalid_amount",
+    "neg_amount",
+    "unknown_category",
+):
+    data_quality_counter.labels(quality_rule=rule)
 
 
 @app.route("/health", methods=["GET"])
@@ -76,6 +87,34 @@ def health():
 @app.route("/predict", methods=["POST"])
 def predict():
     logging.info("Received prediction request at /predict.")
+    payload = request.get_json(silent=True)
+    quality_rule = None
+
+    if not isinstance(payload, dict):
+        quality_rule = "invalid_payload"
+    elif any(
+        key not in payload or payload[key] is None
+        for key in ("amount", "category", "payment_type")
+    ):
+        quality_rule = "missing_fields"
+    else:
+        try:
+            valid_amount = type(payload["amount"]) in (int, float) and math.isfinite(
+                payload["amount"]
+            )
+        except OverflowError:
+            valid_amount = False
+        if not valid_amount:
+            quality_rule = "invalid_amount"
+        elif not all(
+            isinstance(payload[key], str) for key in ("category", "payment_type")
+        ):
+            quality_rule = "invalid_payload"
+
+    if quality_rule:
+        data_quality_counter.labels(quality_rule=quality_rule).inc()
+        return jsonify(error=quality_rule), HTTPStatus.UNPROCESSABLE_ENTITY
+
     model = get_model()
     feature_extractor = get_feature_extractor_loaded()
     spark = SparkSession.builder.master(run_config.spark_master_url).getOrCreate()
@@ -85,10 +124,10 @@ def predict():
         data_quality_counter.labels(quality_rule="neg_amount").inc()
     if (
         category_received := request.json["category"]
-        not in feature_extractor.get_known_categories()
-    ):
+    ) not in feature_extractor.get_known_categories():
         logging.error(f"Received unknown category in request: {category_received}.")
         data_quality_counter.labels(quality_rule="unknown_category").inc()
+        return jsonify(error="unknown_category"), HTTPStatus.UNPROCESSABLE_ENTITY
 
     request_data = spark.createDataFrame(
         [
@@ -96,14 +135,16 @@ def predict():
                 "amount": request.json["amount"],
                 "category": request.json["category"],
                 "payment_type": request.json["payment_type"],
-            },
+            }
         ]
     )
     logging.info("Calculating features for the request.")
     features = feature_extractor.get_features(request_data)
     features = features.toPandas()
+
     for col_name in ["enc_category", "enc_payment_type"]:
         features = get_nested_column_extended(features, col_name)
+
     logging.info("Features are ready. Calculating prediction.")
     prediction = model.predict(features)[0].item()
     pred_counter.labels(pred="true" if prediction else "false").inc()

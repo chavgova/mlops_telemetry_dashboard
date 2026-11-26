@@ -12,6 +12,7 @@ ENV PYTHONPATH=/nova/
 
 COPY src/ src/
 COPY configs/ configs/
+COPY scripts/ scripts/
 COPY data/trx/ data/trx/
 COPY data/telemetry/ data/telemetry/
 COPY models/.placeholder models/.placeholder

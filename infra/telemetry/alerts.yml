@@ -1,12 +1,85 @@
 groups:
-- name: HttpAlerts
-  rules:
-  - alert: HttpNon200ResponseCode
-    expr: sum by (job, instance) (rate(nova_http_request_exceptions_total{code!~"200"}[1m])) > 0
-    for: 1m
-    labels:
-      severity: error
-    annotations:
-      summary: "Non-200 HTTP codes for job '{{ $labels.job }}'"
-      description: "Job '{{ $labels.job }}' on instance '{{ $labels.instance }}' is experiencing non-200 HTTP response codes. The current value is {{ $value }} requests per second."
-      runbook_url: "https://your-runbook-url/http-errors"
+  - name: NovaMonitoring
+    interval: 15s
+    rules:
+      - alert: NovaApiDown
+        expr: up{job="nova"} == 0
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "API is unavailable"
+
+      - alert: NovaHttpErrors
+        expr: |
+          ( sum(rate(nova_http_request_total{status=~"5.."}[5m])) / clamp_min(sum(rate(nova_http_request_total[5m])), 1e-9) > 0.05 )
+          and (sum(increase(nova_http_request_total[5m])) >= 100)
+        for: 1m
+        labels: {severity: critical}
+        annotations:
+          summary: "HTTP server error rate exceeds 5%"
+
+      - alert: NovaSlowPredictions
+        expr: |
+          ( histogram_quantile(0.95, sum by (le) ( rate(nova_http_request_duration_seconds_bucket{path="/predict",status="200"}[5m]) ) ) > 5 )
+          and ( sum(increase(nova_http_request_duration_seconds_count{path="/predict",status="200"}[5m])) >= 100 )
+        for: 2m
+        labels: {severity: warning}
+        annotations:
+          summary: "Successful prediction p95 exceeds five seconds"
+
+      - alert: NovaDataQuality
+        expr: |
+          ( sum by (quality_rule) (rate(nova_data_quality_total[5m])) / scalar(clamp_min( sum(rate(nova_http_request_duration_seconds_count{path="/predict"}[5m])), 1e-9 )) > 0.05 )
+          and on () ( sum(increase(nova_http_request_duration_seconds_count{path="/predict"}[5m])) >= 100 )
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: "An input quality rule fails on more than 5% of requests"
+
+      - alert: NovaHighFraudPredictionShare
+        expr: |
+          ( sum(rate(nova_predictions_total{pred="true"}[5m])) / clamp_min(sum(rate(nova_predictions_total[5m])), 1e-9) > 0.20 )
+          and (sum(increase(nova_predictions_total[5m])) >= 100)
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 20% of predictions indicate fraud"
+
+      - alert: NovaInsufficientMonitoringData
+        expr: |
+          (nova_monitoring_samples{job="telemetryBatch"} < 100)
+          and on (job, instance) ( time() - nova_live_data_timestamp_seconds{job="telemetryBatch"} < 60 )
+          and on (job, instance) ( time() - nova_monitoring_last_success_timestamp_seconds{job="telemetryBatch"} < 60 )
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Recent data is arriving but the drift window remains too small"
+
+      - alert: NovaDistributionDrift
+        expr: |
+          (nova_psi_s{job="telemetryBatch",target="is_large_transaction"} > 0.2)
+          and on (job, instance) (nova_monitoring_samples{job="telemetryBatch"} >= 100)
+          and on (job, instance) ( time() - nova_monitoring_last_success_timestamp_seconds{job="telemetryBatch"} < 60 )
+          and on (job, instance) ( time() - nova_live_data_timestamp_seconds{job="telemetryBatch"} < 300 )
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: "Large-transaction feature distribution changed"
+
+      - alert: NovaMonitoringStopped
+        expr: |
+          (time() - nova_monitoring_last_success_timestamp_seconds{job="telemetryBatch"} > 60)
+          or absent(nova_monitoring_last_success_timestamp_seconds{job="telemetryBatch"})
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: "Monitoring job has not published a recent successful snapshot"
+
+      - alert: NovaLiveDataStale
+        expr: |
+          (time() - nova_live_data_timestamp_seconds{job="telemetryBatch"} > 300)
+          and on (job, instance) ( time() - nova_monitoring_last_success_timestamp_seconds{job="telemetryBatch"} < 60 )
+        for: 1m
+        labels: {severity: warning}
+        annotations:
+          summary: "Monitoring is running but its input data is old"

@@ -58,8 +58,9 @@ class TelemetryConfig:
     #
     # Live/"latest" distribution: [0.2, 0.3]
     #
-    num_instances_for_live_dist: int = 3
-    epsilon: float = 1 / 1e100
+    num_instances_for_live_dist: int = 100
+    epsilon: float = 1e-6
+    live_window_seconds: int = 300
     push_gateway_uri: str = (
         "http://prometheus_push_gateway:9091"  # "http://localhost:9091"
     )
